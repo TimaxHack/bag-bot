@@ -111,13 +111,13 @@ async def handle_complexity(update: Update, context: CallbackContext) -> int:
         sheet.append_row(row)
         await update.message.reply_text(
             "✅ Баг успешно добавлен!", 
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=create_keyboard(['Добавить баг'])
         )
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text(
             "❌ Ошибка при добавлении бага", 
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=create_keyboard(['Добавить баг'])
         )
     
     context.user_data.clear()
@@ -134,7 +134,7 @@ async def cancel(update: Update, context: CallbackContext) -> int:
 async def daily_reminder(context: CallbackContext):
     try:
         await context.bot.send_message(
-            chat_id= ,
+            chat_id=,
             text="🕚 23:30! Не забудь добавить сегодняшние баги! /addbug"
         )
     except Exception as e:
@@ -152,10 +152,11 @@ async def handle_button_add_bug(update: Update, context: CallbackContext) -> int
     return await addbug(update, context)  # Вызываем функцию добавления бага
 
 def main() -> None:
-    application = ApplicationBuilder().token(" ").build()
+    application = ApplicationBuilder().token("").build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('addbug', addbug)],
+        entry_points=[CommandHandler('addbug', addbug),
+                      MessageHandler(filters.Regex('Добавить баг'), addbug)],
         states={
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_description)],
             STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_state)],
@@ -168,8 +169,7 @@ def main() -> None:
     )
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler('addbug', addbug))
-    application.add_handler(MessageHandler(filters.Regex('Добавить баг'), handle_button_add_bug))  # Добавляем обработчик кнопки
+    application.add_handler(conv_handler)
 
     scheduler = BackgroundScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
@@ -180,9 +180,8 @@ def main() -> None:
         kwargs={'context': application}  # Передаем контекст
     )
     scheduler.start()
-
     application.run_polling()
 
-    application.run_polling()
+    
 if __name__ == '__main__':
     main()
