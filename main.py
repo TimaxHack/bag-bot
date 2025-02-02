@@ -1,4 +1,5 @@
 import logging
+import asyncio  # Добавьте этот импорт
 from datetime import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -23,7 +24,7 @@ SCOPE = ['https://www.googleapis.com/auth/spreadsheets',
          'https://www.googleapis.com/auth/drive']
 CREDS = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', SCOPE)
 CLIENT = gspread.authorize(CREDS)
-SHEET_ID = 'YOUR_GOOGLE_SHEET_ID'
+SHEET_ID = ''
 
 DESCRIPTION, STATE, CATEGORY, URGENCY, TIME_SPENT, COMPLEXITY = range(6)
 
@@ -37,13 +38,13 @@ RATINGS = [str(i) for i in range(1, 11)]
 
 def create_keyboard(items, columns=2):
     keyboard = [items[i:i+columns] for i in range(0, len(items), columns)]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(
         f"Привет {update.effective_user.first_name}! Я бот для отслеживания багов.\n"
         "Используй /addbug чтобы добавить новый баг",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=create_keyboard(['Добавить баг'])
     )
 
 async def addbug(update: Update, context: CallbackContext) -> int:
@@ -78,7 +79,7 @@ async def handle_category(update: Update, context: CallbackContext) -> int:
     return URGENCY
 
 async def handle_urgency(update: Update, context: CallbackContext) -> int:
-    context.user_data['bug']['urgency'] = update.message.text
+    context.user_data['bug']['urgency'] = int(update.message.text)
     await update.message.reply_text(
         "Оцени затраты времени (1-10):", 
         reply_markup=create_keyboard(RATINGS, 5)
@@ -86,7 +87,7 @@ async def handle_urgency(update: Update, context: CallbackContext) -> int:
     return TIME_SPENT
 
 async def handle_time_spent(update: Update, context: CallbackContext) -> int:
-    context.user_data['bug']['time_spent'] = update.message.text
+    context.user_data['bug']['time_spent'] = int(update.message.text)
     await update.message.reply_text(
         "Оцени сложность (1-10):", 
         reply_markup=create_keyboard(RATINGS, 5)
@@ -94,7 +95,7 @@ async def handle_time_spent(update: Update, context: CallbackContext) -> int:
     return COMPLEXITY
 
 async def handle_complexity(update: Update, context: CallbackContext) -> int:
-    context.user_data['bug']['complexity'] = update.message.text
+    context.user_data['bug']['complexity'] = int(update.message.text)
     
     try:
         sheet = CLIENT.open_by_key(SHEET_ID).sheet1
@@ -106,6 +107,7 @@ async def handle_complexity(update: Update, context: CallbackContext) -> int:
             context.user_data['bug']['time_spent'],
             context.user_data['bug']['complexity'],
         ]
+        print(row, 'rowrowrow')
         sheet.append_row(row)
         await update.message.reply_text(
             "✅ Баг успешно добавлен!", 
@@ -130,13 +132,27 @@ async def cancel(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 async def daily_reminder(context: CallbackContext):
-    await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text="🕚 23:30! Не забудь добавить сегодняшние баги! /addbug"
-    )
+    try:
+        await context.bot.send_message(
+            chat_id= ,
+            text="🕚 23:30! Не забудь добавить сегодняшние баги! /addbug"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке напоминания: {e}")
+
+def send_reminder(context: CallbackContext):
+    loop = asyncio.new_event_loop()  # Создаем новый цикл событий
+    asyncio.set_event_loop(loop)     # Устанавливаем его как текущий
+    loop.run_until_complete(daily_reminder(context))  # Запускаем асинхронную функцию
+    loop.close()  # Закрываем цикл событий после выполнения
+
+
+
+async def handle_button_add_bug(update: Update, context: CallbackContext) -> int:
+    return await addbug(update, context)  # Вызываем функцию добавления бага
 
 def main() -> None:
-    application = ApplicationBuilder().token("YOUR_BOT_TOKEN").build()
+    application = ApplicationBuilder().token(" ").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('addbug', addbug)],
@@ -152,19 +168,21 @@ def main() -> None:
     )
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler('addbug', addbug))
+    application.add_handler(MessageHandler(filters.Regex('Добавить баг'), handle_button_add_bug))  # Добавляем обработчик кнопки
 
     scheduler = BackgroundScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
-        daily_reminder,
+        send_reminder,  # Вызываем синхронную функцию
         trigger='cron',
         hour=23,
         minute=30,
-        kwargs={'context': application}
+        kwargs={'context': application}  # Передаем контекст
     )
     scheduler.start()
 
     application.run_polling()
 
+    application.run_polling()
 if __name__ == '__main__':
     main()
